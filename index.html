@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>GridWatch — Power Grid Fault Detection</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700;900&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- LOADING OVERLAY -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loadingText">PROCESSING…</div>
+</div>
+
+<!-- TOAST CONTAINER -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="header-logo">
+    <div class="logo-icon">⚡</div>
+    <div>
+      <div class="logo-text">GridWatch</div>
+      <div class="logo-sub">POWER GRID FAULT DETECTION SYSTEM</div>
+    </div>
+  </div>
+  <div class="header-status">
+    <div class="status-pill" id="statusMST"><span class="dot"></span>MST IDLE</div>
+    <div class="status-pill" id="statusMEM"><span class="dot"></span>MEM IDLE</div>
+  </div>
+</header>
+
+<!-- TAB BAR -->
+<nav class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('mst', this)">
+    🔗 <span>MST Analysis</span><span class="tab-badge">DAA</span>
+  </button>
+  <button class="tab-btn" onclick="switchTab('memory', this)">
+    🧠 <span>Memory Allocator</span><span class="tab-badge">OS</span>
+  </button>
+  <button class="tab-btn" onclick="switchTab('report', this)">
+    📋 <span>Report</span><span class="tab-badge">REC</span>
+  </button>
+</nav>
+
+<!-- MAIN -->
+<main class="main">
+
+  <!-- ══════════════════════════════════════
+       TAB 1 — MST ANALYSIS
+  ══════════════════════════════════════ -->
+  <div class="tab-content active" id="tab-mst">
+
+    <!-- Upload Panel -->
+    <div class="panel">
+      <div class="panel-title">⚙ GRAPH INPUT — LOAD NEIGHBOURHOOD TOPOLOGY</div>
+      <div class="grid-2" style="gap:20px; align-items:start">
+        <div>
+          <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+            <div class="upload-icon">📂</div>
+            <div class="upload-label" id="uploadLabel">DROP GRAPH FILE HERE</div>
+            <div class="upload-hint">Accepts .CSV and .JSON — drag & drop or click</div>
+            <input type="file" id="fileInput" accept=".csv,.json" onchange="handleFile(this)">
+          </div>
+          <div class="mt-8 btn-row">
+            <button class="btn btn-amber" onclick="runMST()" id="runMSTBtn" disabled>▶ ANALYSE GRAPH</button>
+            <button class="btn btn-cyan" onclick="clearMST()">✕ CLEAR</button>
+          </div>
+        </div>
+        <div>
+          <div class="section-header">SAMPLE FILES</div>
+          <p style="font-size:12px;color:var(--muted);margin-bottom:10px;">
+            Download a ready-made topology to test with — same 9-node city graph in both formats.
+          </p>
+          <div class="sample-links">
+            <a class="sample-link" onclick="downloadSample('csv')">⬇ sample_graph.csv</a>
+            <a class="sample-link" onclick="downloadSample('json')">⬇ sample_graph.json</a>
+          </div>
+          <div class="divider"></div>
+          <div class="section-header">CSV FORMAT</div>
+          <code>source,destination,weight<br>A,B,4<br>A,H,8<br>…</code>
+          <div class="divider"></div>
+          <div class="section-header">JSON FORMAT</div>
+          <code>{"nodes":[…],"edges":[{"source":"A","destination":"B","weight":4},…]}</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats row -->
+    <div class="stat-row" id="mstStatsRow" style="display:none">
+      <div class="stat-box">
+        <div class="stat-label">NEIGHBOURHOODS</div>
+        <div class="stat-value white" id="statNodes">—</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">CABLE ROUTES</div>
+        <div class="stat-value white" id="statEdges">—</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">PRIM'S MST COST</div>
+        <div class="stat-value amber" id="statPrimsCost">—</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">KRUSKAL'S MST COST</div>
+        <div class="stat-value cyan" id="statKruskalsCost">—</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">PRIM'S TIME</div>
+        <div class="stat-value" style="color:var(--amber);font-size:18px" id="statPrimsTime">—</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">KRUSKAL'S TIME</div>
+        <div class="stat-value" style="color:var(--cyan);font-size:18px" id="statKruskalsTime">—</div>
+      </div>
+    </div>
+
+    <!-- Graph + Algorithms -->
+    <div class="grid-2">
+      <!-- Graph Canvas -->
+      <div class="panel cyan-accent">
+        <div class="panel-title cyan">◈ NETWORK TOPOLOGY VISUALISER</div>
+        <canvas id="graphCanvas"></canvas>
+        <div class="mt-8" style="font-family:var(--font-mono);font-size:11px;color:var(--muted)">
+          <span style="color:var(--muted)">◯ Node</span> &nbsp;
+          <span style="color:var(--border)">─── All edges</span> &nbsp;
+          <span style="color:var(--amber)">─── Prim's MST</span> &nbsp;
+          <span style="color:var(--cyan)">─── Kruskal's MST</span>
+        </div>
+        <div class="mt-8 btn-row" id="mstToggleRow" style="display:none">
+          <button class="btn btn-amber" onclick="setMSTView('prims')" id="viewPrims">PRIM'S MST</button>
+          <button class="btn btn-cyan" onclick="setMSTView('kruskals')" id="viewKruskals">KRUSKAL'S MST</button>
+          <button class="btn" style="border-color:var(--muted);color:var(--muted)" onclick="setMSTView('all')">ALL EDGES</button>
+        </div>
+      </div>
+
+      <!-- Algorithm Side-by-side -->
+      <div>
+        <!-- Prim's Steps -->
+        <div class="panel" style="margin-bottom:16px">
+          <div class="panel-title">▶ PRIM'S ALGORITHM — STEP TRACE</div>
+          <div class="trace-container" id="primsTrace">
+            <div class="empty-state">LOAD A GRAPH TO SEE TRACE</div>
+          </div>
+        </div>
+        <!-- Kruskal's Steps -->
+        <div class="panel cyan-accent">
+          <div class="panel-title cyan">▶ KRUSKAL'S ALGORITHM — STEP TRACE</div>
+          <div class="trace-container" id="kruskalsTrace">
+            <div class="empty-state">LOAD A GRAPH TO SEE TRACE</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Comparison -->
+    <div class="panel green-accent" id="comparisonPanel" style="display:none">
+      <div class="panel-title green">⟺ ALGORITHM COMPARISON</div>
+      <div class="grid-3">
+        <div>
+          <div class="section-header">EXECUTION TIME</div>
+          <div class="compare-bar-wrap">
+            <div class="compare-bar-label">Prim's</div>
+            <div class="compare-bar amber" id="primsBar" style="width:50%"></div>
+            <span class="mono text-amber" id="primsBarLabel" style="font-size:11px;margin-left:6px"></span>
+          </div>
+          <div class="compare-bar-wrap">
+            <div class="compare-bar-label">Kruskal's</div>
+            <div class="compare-bar" id="kruskalsBar" style="width:50%"></div>
+            <span class="mono text-cyan" id="kruskalsBarLabel" style="font-size:11px;margin-left:6px"></span>
+          </div>
+        </div>
+        <div>
+          <div class="section-header">GRAPH DENSITY</div>
+          <div style="font-family:var(--font-cond);font-size:36px;font-weight:900;color:var(--green)" id="densityVal">—</div>
+          <div style="font-family:var(--font-mono);font-size:11px;color:var(--muted)" id="densityLabel"></div>
+        </div>
+        <div>
+          <div class="section-header">MST COST MATCH</div>
+          <div style="font-family:var(--font-cond);font-size:28px;font-weight:900" id="costMatchLabel">—</div>
+          <div style="font-family:var(--font-mono);font-size:11px;color:var(--muted)">Both algorithms must yield same MST weight</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /tab-mst -->
+
+
+  <!-- ══════════════════════════════════════
+       TAB 2 — MEMORY ALLOCATOR
+  ══════════════════════════════════════ -->
+  <div class="tab-content" id="tab-memory">
+
+    <!-- Config -->
+    <div class="panel">
+      <div class="panel-title">⚙ MEMORY CONFIGURATION</div>
+      <div class="field-row">
+        <div class="field-group">
+          <label class="field-label">TOTAL MEMORY (KB)</label>
+          <input type="number" class="field-input" id="totalMemory" value="512" min="64" max="65536">
+        </div>
+        <div class="field-group">
+          <label class="field-label">NEIGHBOURHOOD LABEL</label>
+          <input type="text" class="field-input wide" id="reqLabel" placeholder="e.g. NH-1" value="NH-1">
+        </div>
+        <div class="field-group">
+          <label class="field-label">SIZE (KB)</label>
+          <input type="number" class="field-input" id="reqSize" value="64" min="1">
+        </div>
+        <div class="field-group">
+          <label class="field-label">&nbsp;</label>
+          <button class="btn btn-green" onclick="addRequest('alloc')">＋ ALLOC</button>
+        </div>
+        <div class="field-group">
+          <label class="field-label">FREE LABEL</label>
+          <input type="text" class="field-input wide" id="freeLabel" placeholder="e.g. NH-1">
+        </div>
+        <div class="field-group">
+          <label class="field-label">&nbsp;</label>
+          <button class="btn" style="border-color:var(--red);color:var(--red)" onclick="addRequest('free')">↩ FREE</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Request List -->
+    <div class="panel cyan-accent">
+      <div class="panel-title cyan">📋 REQUEST QUEUE</div>
+      <div class="req-list" id="reqList">
+        <div class="empty-state" id="reqEmpty">No requests yet. Add alloc/free requests above.</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-amber" onclick="runMemory()" id="runMemBtn">▶ SIMULATE ALL STRATEGIES</button>
+        <button class="btn btn-cyan" onclick="loadDefaultRequests()">⬇ LOAD DEFAULTS</button>
+        <button class="btn" style="border-color:var(--muted);color:var(--muted)" onclick="clearRequests()">✕ CLEAR</button>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="memResultsSection" style="display:none">
+
+      <!-- Visual bars for each strategy -->
+      <div class="grid-3" id="memBarsGrid">
+        <!-- First Fit -->
+        <div class="panel">
+          <div class="panel-title">FIRST FIT — MEMORY MAP</div>
+          <div class="mem-bar-container" id="bar-first_fit"></div>
+          <div id="stats-first_fit"></div>
+        </div>
+        <!-- Best Fit -->
+        <div class="panel cyan-accent">
+          <div class="panel-title cyan">BEST FIT — MEMORY MAP</div>
+          <div class="mem-bar-container" id="bar-best_fit"></div>
+          <div id="stats-best_fit"></div>
+        </div>
+        <!-- Worst Fit -->
+        <div class="panel" style="border-color:var(--border)">
+          <div class="panel-title" style="color:var(--muted)">WORST FIT — MEMORY MAP</div>
+          <div class="mem-bar-container" id="bar-worst_fit"></div>
+          <div id="stats-worst_fit"></div>
+        </div>
+      </div>
+
+      <!-- Fragmentation comparison table -->
+      <div class="panel green-accent">
+        <div class="panel-title green">📊 FRAGMENTATION STATISTICS — ALL STRATEGIES</div>
+        <table class="frag-table" id="fragTable">
+          <thead>
+            <tr>
+              <th>STRATEGY</th>
+              <th>USED (KB)</th>
+              <th>FREE (KB)</th>
+              <th>FREE BLOCKS</th>
+              <th>LARGEST FREE (KB)</th>
+              <th>EXT. FRAG RATIO</th>
+              <th>UTILISATION</th>
+            </tr>
+          </thead>
+          <tbody id="fragTableBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Allocation Logs -->
+      <div class="grid-3">
+        <div class="panel">
+          <div class="panel-title">FIRST FIT LOG</div>
+          <div class="trace-container" id="log-first_fit"></div>
+        </div>
+        <div class="panel cyan-accent">
+          <div class="panel-title cyan">BEST FIT LOG</div>
+          <div class="trace-container" id="log-best_fit"></div>
+        </div>
+        <div class="panel" style="border-color:var(--border)">
+          <div class="panel-title" style="color:var(--muted)">WORST FIT LOG</div>
+          <div class="trace-container" id="log-worst_fit"></div>
+        </div>
+      </div>
+
+    </div><!-- /memResultsSection -->
+
+  </div><!-- /tab-memory -->
+
+
+  <!-- ══════════════════════════════════════
+       TAB 3 — REPORT
+  ══════════════════════════════════════ -->
+  <div class="tab-content" id="tab-report">
+    <div id="reportContent">
+      <div class="empty-state" style="padding:80px">
+        <div style="font-size:36px;margin-bottom:16px">📋</div>
+        RUN MST ANALYSIS AND MEMORY SIMULATION TO GENERATE REPORT
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ══════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════ -->
+<script src="app.js"></script>
+</body>
+</html>
+
