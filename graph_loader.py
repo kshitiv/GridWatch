@@ -77,3 +77,5 @@ def build_adjacency(nodes, edges):
         adj[u].append((w, v))
         adj[v].append((w, u))
     return adj
+  
+        
